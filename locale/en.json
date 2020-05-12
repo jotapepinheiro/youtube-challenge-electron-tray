@@ -1,6 +1,9 @@
 {
-    "open": "Open with VSCode",
+    "openCode": "Open with VSCode",
+    "openPhp": "Open with PhpStorm",
+    "openSub": "Open with Sublime",
     "add": "Add new project folder...",
     "close": "Quit",
-    "remove": "Remove"
+    "remove": "Remove",
+    "error": "Error"
 }

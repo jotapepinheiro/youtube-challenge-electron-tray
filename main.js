@@ -1,6 +1,6 @@
 const { resolve, basename } = require('path');
 const {
-  app, Menu, Tray, dialog,
+  app, Menu, Tray, dialog, Notification,
 } = require('electron');
 
 const { spawn } = require('child_process');
@@ -41,6 +41,20 @@ function getLocale() {
   }
 }
 
+function callNotification(title, body) {
+  const iconAddress = resolve(__dirname, 'assets', 'iconTemplate.png');
+  const notif = { title, body, icon: iconAddress };
+  new Notification(notif).show();
+}
+
+function sendError(p) {
+  const locale = getLocale();
+
+  p.stderr.on('data', (data) => {
+    callNotification(locale.error, data.toString());
+  });
+}
+
 function render(tray = mainTray) {
   const storedProjects = store.get('projects');
   const projects = storedProjects ? JSON.parse(storedProjects) : [];
@@ -50,9 +64,24 @@ function render(tray = mainTray) {
     label: name,
     submenu: [
       {
-        label: locale.open,
+        label: locale.openCode,
         click: () => {
-          spawn('code', [path], { shell: true });
+          const p = spawn('code', [path], { shell: true });
+          sendError(p);
+        },
+      },
+      {
+        label: locale.openSub,
+        click: () => {
+          const p = spawn('subl', [path], { shell: true });
+          sendError(p);
+        },
+      },
+      {
+        label: locale.openPhp,
+        click: () => {
+          const p = spawn('pstorm', [path], { shell: true });
+          sendError(p);
         },
       },
       {

@@ -1,6 +1,9 @@
 {
-    "open": "Abrir no VSCode",
+    "openCode": "Abrir no VSCode",
+    "openPhp": "Abrir no PhpStorm",
+    "openSub": "Abrir no Sublime",
     "add": "Adicionar novo projeto...",
     "close": "Fechar Code Tray",
-    "remove": "Remover"
+    "remove": "Remover",
+    "error": "Erro"
 }
