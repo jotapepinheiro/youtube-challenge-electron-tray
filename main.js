@@ -3,30 +3,56 @@ const {
   app, Menu, Tray, dialog, Notification,
 } = require('electron');
 
+const AutoLaunch = require('auto-launch');
+
+const axios = require('axios');
+
 const { spawn } = require('child_process');
 const fixPath = require('fix-path');
 const fs = require('fs');
 
 const Store = require('electron-store');
-const Sentry = require('@sentry/electron');
 
 fixPath();
-
-Sentry.init({ dsn: 'https://18c9943a576d41248b195b5678f2724e@sentry.io/1506479' });
 
 const schema = {
   projects: {
     type: 'string',
   },
+  initLogin: {
+    type: 'boolean',
+    default: false,
+  },
 };
 
 let mainTray = {};
+
+const store = new Store({ schema });
+
+let alConfig = { name: 'Code Tray', isHidden: true };
+
+if (process.execPath) {
+  alConfig = Object.assign(alConfig, { path: process.execPath });
+}
+const autoLauncher = new AutoLaunch(alConfig);
 
 if (app.dock) {
   app.dock.hide();
 }
 
-const store = new Store({ schema });
+function callNotification(title, body) {
+  const iconAddress = resolve(__dirname, 'assets', 'iconTemplate.png');
+  const notif = { title, body, icon: iconAddress };
+  new Notification(notif).show();
+}
+
+function getBTC() {
+  axios.get('https://api.bitcointrade.com.br/v3/public/BRLBTC/ticker')
+    .then((res) => {
+      const price = res.data.data.buy.toLocaleString('pt-BR');
+      callNotification('Valor do Bitcoin', `R$ ${price}`);
+    });
+}
 
 function getLocale() {
   const locale = app.getLocale();
@@ -41,12 +67,6 @@ function getLocale() {
   }
 }
 
-function callNotification(title, body) {
-  const iconAddress = resolve(__dirname, 'assets', 'iconTemplate.png');
-  const notif = { title, body, icon: iconAddress };
-  new Notification(notif).show();
-}
-
 function sendError(p) {
   const locale = getLocale();
 
@@ -55,10 +75,25 @@ function sendError(p) {
   });
 }
 
+function setAutoLogon(auto) {
+  store.set('initLogin', auto);
+
+  autoLauncher.isEnabled()
+    .then((isEnabled) => {
+      if (isEnabled && auto) return;
+
+      if (isEnabled && !auto) autoLauncher.disable();
+
+      if (!isEnabled && auto) autoLauncher.enable();
+    });
+}
+
 function render(tray = mainTray) {
   const storedProjects = store.get('projects');
+  const initLogin = store.get('initLogin');
   const projects = storedProjects ? JSON.parse(storedProjects) : [];
   const locale = getLocale();
+  setAutoLogon(initLogin);
 
   const items = projects.map(({ name, path }) => ({
     label: name,
@@ -68,6 +103,7 @@ function render(tray = mainTray) {
         click: () => {
           const p = spawn('code', [path], { shell: true });
           sendError(p);
+          getBTC();
         },
       },
       {
@@ -75,6 +111,7 @@ function render(tray = mainTray) {
         click: () => {
           const p = spawn('subl', [path], { shell: true });
           sendError(p);
+          getBTC();
         },
       },
       {
@@ -82,6 +119,7 @@ function render(tray = mainTray) {
         click: () => {
           const p = spawn('pstorm', [path], { shell: true });
           sendError(p);
+          getBTC();
         },
       },
       {
@@ -123,6 +161,17 @@ function render(tray = mainTray) {
       type: 'separator',
     },
     ...items,
+    {
+      type: 'separator',
+    },
+    {
+      label: 'Iniciar no Login',
+      type: 'checkbox',
+      checked: initLogin,
+      click(item) {
+        setAutoLogon(item.checked);
+      },
+    },
     {
       type: 'separator',
     },
