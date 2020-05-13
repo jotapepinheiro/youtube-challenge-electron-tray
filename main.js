@@ -1,6 +1,6 @@
 const { resolve, basename } = require('path');
 const {
-  app, Menu, Tray, dialog, Notification,
+  app, Menu, Tray, dialog, Notification, nativeImage,
 } = require('electron');
 
 const AutoLaunch = require('auto-launch');
@@ -27,32 +27,18 @@ const schema = {
 
 let mainTray = {};
 
-const store = new Store({ schema });
-
-let alConfig = { name: 'Code Tray', isHidden: true };
-
-if (process.execPath) {
-  alConfig = Object.assign(alConfig, { path: process.execPath });
-}
-const autoLauncher = new AutoLaunch(alConfig);
-
 if (app.dock) {
   app.dock.hide();
 }
 
-function callNotification(title, body) {
-  const iconAddress = resolve(__dirname, 'assets', 'iconTemplate.png');
-  const notif = { title, body, icon: iconAddress };
-  new Notification(notif).show();
-}
+app.setName('CodeTray');
 
-function getBTC() {
-  axios.get('https://api.bitcointrade.com.br/v3/public/BRLBTC/ticker')
-    .then((res) => {
-      const price = res.data.data.buy.toLocaleString('pt-BR');
-      callNotification('Valor do Bitcoin', `R$ ${price}`);
-    });
-}
+const store = new Store({ schema });
+
+const appName = app.getName();
+const appPath = app.getAppPath();
+
+const autoLauncher = new AutoLaunch({ name: 'CodeTray', path: `${appPath}/${appName}`, isHidden: true });
 
 function getLocale() {
   const locale = app.getLocale();
@@ -65,6 +51,59 @@ function getLocale() {
     default:
       return JSON.parse(fs.readFileSync(resolve(__dirname, 'locale/en.json')));
   }
+}
+
+function callNotification(title, body) {
+  const iconAddress = resolve(__dirname, 'assets', 'iconTemplate.png');
+  const notif = { title, body, icon: iconAddress };
+  new Notification(notif).show();
+}
+
+function numberFormat(number, decimals, decPoint, thousandsPoint) {
+  const locale = getLocale();
+
+  // eslint-disable-next-line no-restricted-globals
+  if (number == null || !isFinite(number)) {
+    callNotification(locale.error, 'number is not valid');
+  }
+
+  if (!decimals) {
+    const len = number.toString().split('.').length;
+    // eslint-disable-next-line no-param-reassign
+    decimals = len > 1 ? len : 0;
+  }
+
+  if (!decPoint) {
+    // eslint-disable-next-line no-param-reassign
+    decPoint = '.';
+  }
+
+  if (!thousandsPoint) {
+    // eslint-disable-next-line no-param-reassign
+    thousandsPoint = ',';
+  }
+
+  // eslint-disable-next-line no-param-reassign
+  number = parseFloat(number).toFixed(decimals);
+
+  // eslint-disable-next-line no-param-reassign
+  number = number.replace('.', decPoint);
+
+  const splitNum = number.split(decPoint);
+  splitNum[0] = splitNum[0].replace(/\B(?=(\d{3})+(?!\d))/g, thousandsPoint);
+  // eslint-disable-next-line no-param-reassign
+  number = splitNum.join(decPoint);
+
+  return number;
+}
+
+function getMoeda(code) {
+  axios.get(`https://economia.awesomeapi.com.br/${code}`)
+    .then((res) => {
+      const dif = ((res.data[0].varBid >= 0) ? 'Alta' : 'Queda').concat(` de ${res.data[0].varBid}%`);
+      const price = numberFormat(res.data[0].bid);
+      callNotification(`Valor do ${res.data[0].name}`, `R$ ${price} \n${dif}`);
+    });
 }
 
 function sendError(p) {
@@ -100,27 +139,43 @@ function render(tray = mainTray) {
     submenu: [
       {
         label: locale.openCode,
+        icon: nativeImage.createFromPath(resolve(__dirname, 'assets', 'iconVscode.png')).resize({ width: 16 }),
         click: () => {
           const p = spawn('code', [path], { shell: true });
           sendError(p);
-          getBTC();
         },
       },
       {
         label: locale.openSub,
+        icon: nativeImage.createFromPath(resolve(__dirname, 'assets', 'iconSublime.png')).resize({ width: 16 }),
         click: () => {
           const p = spawn('subl', [path], { shell: true });
           sendError(p);
-          getBTC();
         },
       },
       {
         label: locale.openPhp,
+        icon: nativeImage.createFromPath(resolve(__dirname, 'assets', 'iconPhpStorm.png')).resize({ width: 16 }),
         click: () => {
           const p = spawn('pstorm', [path], { shell: true });
           sendError(p);
-          getBTC();
         },
+      },
+      {
+        type: 'separator',
+      },
+      {
+        // Mac only por enquanto
+        label: 'Abrir no Terminal',
+        icon: nativeImage.createFromPath(resolve(__dirname, 'assets', 'iconITerm.png')).resize({ width: 16 }),
+        click() {
+          if (process.platform === 'darwin') {
+            spawn('open', ['-a', 'iTerm', [path]], { stdio: 'inherit' });
+          }
+        },
+      },
+      {
+        type: 'separator',
       },
       {
         label: locale.remove,
@@ -132,6 +187,26 @@ function render(tray = mainTray) {
     ],
   }));
 
+  const saveProject = (pathed) => {
+    const [path] = pathed;
+    const name = basename(path);
+
+    store.set(
+      'projects',
+      JSON.stringify([
+        ...projects,
+        {
+          path,
+          name,
+        },
+      ]),
+    );
+
+    callNotification(`Projeto ${name}`, 'Adicionado com sucesso!!');
+
+    render();
+  };
+
   const contextMenu = Menu.buildFromTemplate([
     {
       label: locale.add,
@@ -140,21 +215,7 @@ function render(tray = mainTray) {
 
         if (!result) return;
 
-        const [path] = result;
-        const name = basename(path);
-
-        store.set(
-          'projects',
-          JSON.stringify([
-            ...projects,
-            {
-              path,
-              name,
-            },
-          ]),
-        );
-
-        render();
+        saveProject(result);
       },
     },
     {
@@ -165,9 +226,32 @@ function render(tray = mainTray) {
       type: 'separator',
     },
     {
+      label: 'Moedas',
+      enabled: true,
+      submenu: [
+        {
+          label: 'Dolar',
+          click() {
+            getMoeda('usd');
+          },
+        },
+        {
+          label: 'BTC',
+          click() {
+            getMoeda('btc');
+          },
+        },
+      ],
+    },
+    {
+      type: 'separator',
+    },
+    {
       label: 'Iniciar no Login',
       type: 'checkbox',
       checked: initLogin,
+      enabled: true,
+      visible: true,
       click(item) {
         setAutoLogon(item.checked);
       },
@@ -185,7 +269,13 @@ function render(tray = mainTray) {
 
   tray.setContextMenu(contextMenu);
 
+  tray.setToolTip(`${items.length} ${locale.count}`);
+
   tray.on('click', tray.popUpContextMenu);
+
+  tray.on('drop-files', (event, files) => {
+    saveProject(files);
+  });
 }
 
 app.on('ready', () => {
